@@ -31,8 +31,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
-
+import androidx.navigation.NavController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 
 
 class MainActivity : ComponentActivity() {
@@ -40,9 +50,106 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             ComposeTutorialTheme {
-                Conversation(SampleData.conversationSample)
+                AppNavigation()
             }
         }
+    }
+}
+// Main View
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainView(navController: NavController) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+
+    ){
+    TopAppBar(
+            title = { Text(text="", style = MaterialTheme.typography.bodyLarge)},
+            actions = {
+                IconButton(
+                    onClick = {
+                        // Navigate to the second view when clicked
+                        navController.navigate("secondView")
+                    }
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.settings_icon),
+                        contentDescription = "Settings",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+                )
+            )
+        // content
+        Conversation(SampleData.conversationSample)
+    }
+}
+
+// Second View
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SecondView(navController: NavController) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        // TopAppBar with the navigation icon aligned to the left
+        TopAppBar(
+            title = { Text(text = "", style = MaterialTheme.typography.bodyLarge) },
+            navigationIcon = {
+
+                IconButton(
+                    onClick = {
+                        // back navigation
+                        navController.popBackStack()
+                    }
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.left_arrow),
+                        contentDescription = "Back",
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            },
+
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            )
+        )
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.Top,
+            horizontalAlignment = Alignment.Start
+        ) {
+            Text(
+                text = "User:",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            Image(
+                painter = painterResource(R.drawable.john_smith2),
+                contentDescription = "Contact profile picture",
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                    .padding(bottom = 16.dp)
+            )
+        }
+    }
+}
+
+// navigation logic
+@Composable
+fun AppNavigation() {
+    val navController = rememberNavController()
+
+    NavHost(navController = navController, startDestination = "mainView") {
+        composable("mainView") { MainView(navController) }
+        composable("secondView") { SecondView(navController) }
     }
 }
 
@@ -50,8 +157,12 @@ data class Message(val author: String, val body: String)
 
 @Composable
 fun MessageCard(msg: Message) {
-    Row(modifier = Modifier.padding(all = 8.dp)) {
-        Image(
+    Row(
+        modifier = Modifier
+            .padding(all = 8.dp)
+
+    ){
+    Image(
             painter = painterResource(R.drawable.john_smith2),
             contentDescription = "Contact profile picture",
             modifier = Modifier
@@ -63,7 +174,7 @@ fun MessageCard(msg: Message) {
         Spacer(modifier = Modifier.width(8.dp))
 
         var isExpanded by remember { mutableStateOf(false) }
-        // surfaceColor will be updated gradually from one color to the other
+
         val surfaceColor by animateColorAsState(
             if (isExpanded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
         )
@@ -80,16 +191,12 @@ fun MessageCard(msg: Message) {
             Surface(
                 shape = MaterialTheme.shapes.medium,
                 shadowElevation = 1.dp,
-                // surfaceColor color will be changing gradually from primary to surface
                 color = surfaceColor,
-                // animateContentSize will change the Surface size gradually
                 modifier = Modifier.animateContentSize().padding(1.dp)
             ) {
                 Text(
                     text = msg.body,
                     modifier = Modifier.padding(all = 4.dp),
-                    // If the message is expanded, we display all its content
-                    // otherwise we only display the first line
                     maxLines = if (isExpanded) Int.MAX_VALUE else 1,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -108,11 +215,12 @@ fun Conversation(messages: List<Message>) {
     }
 }
 
+// Preview
 @Preview
 @Composable
-fun PreviewConversation() {
+fun PreviewApp() {
     ComposeTutorialTheme {
-        Conversation(SampleData.conversationSample)
+        AppNavigation()
     }
 }
 
@@ -121,6 +229,7 @@ fun ComposeTutorialTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = MaterialTheme.colorScheme.copy(
             primary = Color(0xFF6200EE),
+            background = Color(0xFF212121),
             surface = Color(0xFFBB86FC)
         ),
         typography = MaterialTheme.typography,
