@@ -1,6 +1,12 @@
+package com.example.mobiili
+
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
@@ -8,7 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.res.painterResource
-import com.example.mobiili.R
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,7 +28,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import com.example.mobiili.SampleData
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,18 +35,33 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.room.Room
+import coil.compose.rememberAsyncImagePainter
+import com.example.mobiili.data.MessageData
+import com.example.mobiili.database.AppDatabase
+import com.example.mobiili.database.SampleData
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.io.File
 
 
 class MainActivity : ComponentActivity() {
@@ -50,29 +69,75 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             ComposeTutorialTheme {
-                AppNavigation()
+                val messages = remember { mutableStateOf(listOf<Message>()) }
+                val context = LocalContext.current
+
+                // Load data from the database when the app starts
+                LaunchedEffect(Unit) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        initializeSampleData(context)
+                        messages.value = loadMessagesFromDatabase(context)
+                    }
+                }
+
+                AppNavigation(messages)
             }
         }
     }
 }
+
+private suspend fun loadMessagesFromDatabase(context: Context): List<Message> {
+    val database = Room.databaseBuilder(
+        context,
+        AppDatabase::class.java,
+        "app_database"
+    ).build()
+
+    val messageDataDao = database.messageDataDao()
+    val messages = messageDataDao.getAllMessages().map {
+        Message(it.author, it.body, it.imageUrl)
+    }
+    println("Loaded messages: $messages")
+    return messages
+}
+
+suspend fun initializeSampleData(context: Context) {
+    val database = Room.databaseBuilder(
+        context,
+        AppDatabase::class.java,
+        "app_database"
+    ).build()
+
+    val messageDataDao = database.messageDataDao()
+
+    // Check if the database is empty
+    if (messageDataDao.getAllMessages().isEmpty()) {
+        // Insert sample data into the database
+        SampleData.conversationSample.forEach { message ->
+            val messageData = MessageData(
+                author = message.author,
+                body = message.body,
+                imageUrl = message.imageUrl
+            )
+            messageDataDao.insertMessageData(messageData)
+            println("Inserted message: $messageData")
+        }
+    } else {
+        println("Database already contains data")
+    }
+}
+
 // Main View
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainView(navController: NavController) {
+fun MainView(navController: NavController, messages: List<Message>) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-
-    ){
-    TopAppBar(
-            title = { Text(text="", style = MaterialTheme.typography.bodyLarge)},
+        modifier = Modifier.fillMaxSize()
+    ) {
+        TopAppBar(
+            title = { Text(text = "Conversations", style = MaterialTheme.typography.bodyLarge) },
             actions = {
-                IconButton(
-                    onClick = {
-                        // Navigate to the second view when clicked
-                        navController.navigate("secondView")
-                    }
-                ) {
+                IconButton(onClick = { navController.navigate("userProfileView") }) {
                     Image(
                         painter = painterResource(id = R.drawable.settings_icon),
                         contentDescription = "Settings",
@@ -80,31 +145,41 @@ fun MainView(navController: NavController) {
                     )
                 }
             },
-            colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-                )
-            )
-        // content
-        Conversation(SampleData.conversationSample)
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+        )
+
+        // Show all conversations
+        Conversation(messages = messages)
     }
 }
 
-// Second View
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SecondView(navController: NavController) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        // TopAppBar with the navigation icon aligned to the left
-        TopAppBar(
-            title = { Text(text = "", style = MaterialTheme.typography.bodyLarge) },
-            navigationIcon = {
+fun SecondView(navController: NavController, messages: MutableState<List<Message>>) {
+    val context = LocalContext.current
+    var author by remember { mutableStateOf("") }
+    var imageUri by remember { mutableStateOf<Uri?>(null) }
 
-                IconButton(
-                    onClick = {
-                        // back navigation
-                        navController.popBackStack()
-                    }
+    LaunchedEffect(key1 = messages.value) {
+        val firstMessage = messages.value.firstOrNull()
+        if (firstMessage != null) {
+            author = firstMessage.author
+            imageUri = Uri.parse(firstMessage.imageUrl)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        TopAppBar(
+            title = {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.CenterStart
                 ) {
+                    Text(text = "Edit Profile", style = MaterialTheme.typography.bodyLarge)
+                }
+            },
+            navigationIcon = {
+                IconButton(onClick = { navController.popBackStack() }) {
                     Image(
                         painter = painterResource(id = R.drawable.left_arrow),
                         contentDescription = "Back",
@@ -112,58 +187,130 @@ fun SecondView(navController: NavController) {
                     )
                 }
             },
-
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            )
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
         )
-        Column(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxSize(),
-            verticalArrangement = Arrangement.Top,
-            horizontalAlignment = Alignment.Start
+
+        // Display Profile Picture (if available)
+        Text(
+            text = "User:",
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
+        )
+        ImagePicker(imageUri) { uri ->
+            imageUri = uri
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Username (author) input field
+        Text(
+            text = "Username",
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
+        )
+        TextField(
+            value = author,
+            onValueChange = { author = it },
+            label = { Text("Username") },
+            modifier = Modifier.fillMaxWidth().padding(16.dp)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Save changes button
+        Box(
+            modifier = Modifier.fillMaxWidth(),
+            contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "User:",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-            Image(
-                painter = painterResource(R.drawable.john_smith2),
-                contentDescription = "Contact profile picture",
-                modifier = Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                    .padding(bottom = 16.dp)
-            )
+            Button(onClick = {
+                // Update the messages state with the new author and image URL
+                messages.value = messages.value.map {
+                    it.copy(author = author, imageUrl = imageUri.toString())
+                }
+                saveAuthorData(context, author, imageUri.toString())
+                navController.popBackStack() // Go back to the previous screen after saving
+            }) {
+                Text("Save Changes")
+            }
         }
     }
 }
 
-// navigation logic
-@Composable
-fun AppNavigation() {
-    val navController = rememberNavController()
+fun saveAuthorData(context: Context, newAuthor: String, newImageUri: String) {
+    val database = Room.databaseBuilder(
+        context,
+        AppDatabase::class.java,
+        "app_database"
+    ).build()
 
-    NavHost(navController = navController, startDestination = "mainView") {
-        composable("mainView") { MainView(navController) }
-        composable("secondView") { SecondView(navController) }
+    val messageDataDao = database.messageDataDao()
+
+    // Perform the update in the background thread using coroutine
+    CoroutineScope(Dispatchers.IO).launch {
+        // Update all messages in the database with new author and image URL
+        messageDataDao.updateAllMessages(newAuthor, newImageUri)
     }
 }
 
-data class Message(val author: String, val body: String)
+@Composable
+fun ImagePicker(currentImageUri: Uri?, onImagePicked: (Uri) -> Unit) {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val inputStream = context.contentResolver.openInputStream(it)
+            val file = File(context.filesDir, "picked_image.jpg")
+            val outputStream = file.outputStream()
+            inputStream?.copyTo(outputStream)
+            inputStream?.close()
+            outputStream.close()
+            onImagePicked(Uri.fromFile(file))
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .padding(16.dp)
+            .clickable {
+                launcher.launch("image/*")
+            }
+    ) {
+        Image(
+            painter = rememberAsyncImagePainter(currentImageUri ?: "android.resource://com.example.mobiili/drawable/john_smith2"),
+            contentDescription = "Profile Picture",
+            modifier = Modifier
+                .size(100.dp)
+                .clip(CircleShape)
+                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+        )
+    }
+}
+
+@Composable
+fun AppNavigation(messages: MutableState<List<Message>>) {
+    val navController = rememberNavController()
+
+    NavHost(navController = navController, startDestination = "mainView") {
+        composable("mainView") {
+            MainView(navController = navController, messages = messages.value)
+        }
+        composable("userProfileView") {
+            SecondView(navController = navController, messages = messages)
+        }
+    }
+}
+
+data class Message(val author: String, val body: String, val imageUrl: String)
 
 @Composable
 fun MessageCard(msg: Message) {
     Row(
         modifier = Modifier
             .padding(all = 8.dp)
-
-    ){
-    Image(
-            painter = painterResource(R.drawable.john_smith2),
+    ) {
+        Image(
+            painter = rememberAsyncImagePainter(msg.imageUrl),
             contentDescription = "Contact profile picture",
             modifier = Modifier
                 .size(40.dp)
@@ -203,7 +350,6 @@ fun MessageCard(msg: Message) {
             }
         }
     }
-
 }
 
 @Composable
@@ -215,12 +361,12 @@ fun Conversation(messages: List<Message>) {
     }
 }
 
-// Preview
 @Preview
 @Composable
 fun PreviewApp() {
     ComposeTutorialTheme {
-        AppNavigation()
+        val sampleMessages = remember { mutableStateOf(SampleData.conversationSample) }
+        AppNavigation(messages = sampleMessages)
     }
 }
 
@@ -229,7 +375,6 @@ fun ComposeTutorialTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = MaterialTheme.colorScheme.copy(
             primary = Color(0xFF6200EE),
-            background = Color(0xFF212121),
             surface = Color(0xFFBB86FC)
         ),
         typography = MaterialTheme.typography,
