@@ -72,7 +72,7 @@ class MainActivity : ComponentActivity() {
                 val messages = remember { mutableStateOf(listOf<Message>()) }
                 val context = LocalContext.current
 
-                // Load data from the database when the app starts
+                // Load data from database when app starts
                 LaunchedEffect(Unit) {
                     CoroutineScope(Dispatchers.IO).launch {
                         initializeSampleData(context)
@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+//Load messages
 private suspend fun loadMessagesFromDatabase(context: Context): List<Message> {
     val database = Room.databaseBuilder(
         context,
@@ -101,6 +102,7 @@ private suspend fun loadMessagesFromDatabase(context: Context): List<Message> {
     return messages
 }
 
+//Sample data to database
 suspend fun initializeSampleData(context: Context) {
     val database = Room.databaseBuilder(
         context,
@@ -110,7 +112,6 @@ suspend fun initializeSampleData(context: Context) {
 
     val messageDataDao = database.messageDataDao()
 
-    // Check if the database is empty
     if (messageDataDao.getAllMessages().isEmpty()) {
         // Insert sample data into the database
         SampleData.conversationSample.forEach { message ->
@@ -148,11 +149,12 @@ fun MainView(navController: NavController, messages: List<Message>) {
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
         )
 
-        // Show all conversations
+        // Show conversations
         Conversation(messages = messages)
     }
 }
 
+//Second view
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SecondView(navController: NavController, messages: MutableState<List<Message>>) {
@@ -190,7 +192,7 @@ fun SecondView(navController: NavController, messages: MutableState<List<Message
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
         )
 
-        // Display Profile Picture (if available)
+        // Display Profile Picture
         Text(
             text = "User:",
             style = MaterialTheme.typography.headlineMedium,
@@ -202,7 +204,7 @@ fun SecondView(navController: NavController, messages: MutableState<List<Message
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Username (author) input field
+        // Username input field
         Text(
             text = "Username",
             style = MaterialTheme.typography.bodyLarge,
@@ -236,6 +238,7 @@ fun SecondView(navController: NavController, messages: MutableState<List<Message
     }
 }
 
+//Save new information
 fun saveAuthorData(context: Context, newAuthor: String, newImageUri: String) {
     val database = Room.databaseBuilder(
         context,
@@ -245,13 +248,13 @@ fun saveAuthorData(context: Context, newAuthor: String, newImageUri: String) {
 
     val messageDataDao = database.messageDataDao()
 
-    // Perform the update in the background thread using coroutine
     CoroutineScope(Dispatchers.IO).launch {
         // Update all messages in the database with new author and image URL
         messageDataDao.updateAllMessages(newAuthor, newImageUri)
     }
 }
 
+//Profile picture change
 @Composable
 fun ImagePicker(currentImageUri: Uri?, onImagePicked: (Uri) -> Unit) {
     val context = LocalContext.current
@@ -287,6 +290,7 @@ fun ImagePicker(currentImageUri: Uri?, onImagePicked: (Uri) -> Unit) {
     }
 }
 
+//Navigation for app
 @Composable
 fun AppNavigation(messages: MutableState<List<Message>>) {
     val navController = rememberNavController()
@@ -301,7 +305,9 @@ fun AppNavigation(messages: MutableState<List<Message>>) {
     }
 }
 
+//Message structure
 data class Message(val author: String, val body: String, val imageUrl: String)
+
 
 @Composable
 fun MessageCard(msg: Message) {

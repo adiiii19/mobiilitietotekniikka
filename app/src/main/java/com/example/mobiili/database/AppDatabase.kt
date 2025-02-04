@@ -1,4 +1,4 @@
-package com.example.mobiili.database // or your chosen package
+package com.example.mobiili.database
 
 import androidx.room.Database
 import androidx.room.RoomDatabase

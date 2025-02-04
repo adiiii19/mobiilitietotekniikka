@@ -3,11 +3,8 @@ package com.example.mobiili.database
 import android.net.Uri
 import com.example.mobiili.Message
 
-/**
- * SampleData for Jetpack Compose Tutorial
- */
+
 object SampleData {
-    // Sample conversation data with image URLs
     val conversationSample = listOf(
         Message(
             author = "John Smith",
@@ -76,7 +73,7 @@ object SampleData {
             body = """Happy to be learning more about Jetpack Compose for UI design. It's so powerful!""",
             imageUrl = getDrawableUri("john_smith2")
         ),
-        // Add more messages here if needed
+
     )
 
     private fun getDrawableUri(resourceName: String): String {

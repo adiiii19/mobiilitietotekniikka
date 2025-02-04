@@ -1,10 +1,9 @@
-package com.example.mobiili.data // or your chosen package
+package com.example.mobiili.data
 
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import androidx.room.Update
 
 @Dao
 interface MessageDataDao {

@@ -1,4 +1,4 @@
-package com.example.mobiili.data // or wherever your project package is
+package com.example.mobiili.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
