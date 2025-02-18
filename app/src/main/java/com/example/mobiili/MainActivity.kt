@@ -387,6 +387,7 @@ fun SecondView(navController: NavController, messages: MutableState<List<Message
     }
 }
 
+//
 fun sendNotification(context: Context) {
     val notificationManager = NotificationManagerCompat.from(context)
 
