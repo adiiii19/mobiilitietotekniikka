@@ -1,7 +1,18 @@
 package com.example.mobiili
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,13 +53,20 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -64,11 +82,24 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 
-class MainActivity : ComponentActivity() {
+
+class MainActivity : ComponentActivity(), SensorEventListener {
+    private var sensorManager: SensorManager? = null
+    private var lightSensor: Sensor? = null
+    private var currentLux: Float = 0f
+    private var isDarkTheme = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Initialize sensor manager
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        lightSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_LIGHT)
+
+        // Listener for light sensor events
+        sensorManager?.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
+
         setContent {
-            ComposeTutorialTheme {
+            ComposeTutorialTheme(isDarkTheme.value) {
                 val messages = remember { mutableStateOf(listOf<Message>()) }
                 val context = LocalContext.current
 
@@ -83,6 +114,79 @@ class MainActivity : ComponentActivity() {
                 AppNavigation(messages)
             }
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "channel_id",
+                "channel_name",
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        // Create notification channel (only needed for Android 8.0 and higher)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "lux_channel_id", "Lux Notifications", NotificationManager.IMPORTANCE_HIGH
+            )
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+
+    override fun onSensorChanged(event: SensorEvent?) {
+        if (event != null && event.sensor.type == Sensor.TYPE_LIGHT) {
+            // Get the current lux value
+            currentLux = event.values[0]
+
+            // Check if lux is above 20000
+            if (currentLux > 20000 && !isDarkTheme.value) {
+                isDarkTheme.value = true // Switch to dark theme
+                sendLuxNotification("High light detected: $currentLux lux")
+            } else if (currentLux <= 20000 && isDarkTheme.value) {
+                isDarkTheme.value = false // Switch to light theme
+            }
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // Not needed
+    }
+    // Send notification when high light is detected
+    private fun sendLuxNotification(message: String) {
+        val notificationManager = NotificationManagerCompat.from(this)
+
+        // Check if the necessary permission is granted
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                return // Permission not granted, return early
+            }
+        }
+
+        // Create an Intent to open the app when the notification is clicked
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        // Build the notification
+        val notification = NotificationCompat.Builder(this, "lux_channel_id")
+            .setSmallIcon(R.drawable.notification_image) // Replace with your app icon
+            .setContentTitle("High Light Alert")
+            .setContentText(message)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(1, notification)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        sensorManager?.unregisterListener(this) // Unregister sensor listener
     }
 }
 
@@ -170,6 +274,15 @@ fun SecondView(navController: NavController, messages: MutableState<List<Message
         }
     }
 
+    // Notification permission launcher
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            sendNotification(context)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
             title = {
@@ -206,22 +319,30 @@ fun SecondView(navController: NavController, messages: MutableState<List<Message
 
         // Username input field
         Text(
-            text = "Username",
+            text = "Username:",
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
         )
         TextField(
             value = author,
             onValueChange = { author = it },
-            label = { Text("Username") },
+            colors = TextFieldDefaults.textFieldColors(
+                containerColor = Color.White,
+                cursorColor = Color.Blue,
+                focusedIndicatorColor = Color.Red,
+                unfocusedIndicatorColor = Color.Gray
+            ),
             modifier = Modifier.fillMaxWidth().padding(16.dp)
+
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         // Save changes button
         Box(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
             Button(onClick = {
@@ -235,8 +356,69 @@ fun SecondView(navController: NavController, messages: MutableState<List<Message
                 Text("Save Changes")
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Enable notifications button
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Button(onClick = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        sendNotification(context)
+                    }
+                } else {
+                    sendNotification(context)
+                }
+            }) {
+                Text("Enable Notifications")
+            }
+        }
     }
 }
+
+fun sendNotification(context: Context) {
+    val notificationManager = NotificationManagerCompat.from(context)
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            return // Exit if permission is not granted
+        }
+    }
+
+    // Create an Intent to open the app when notification is clicked
+    val intent = Intent(context, MainActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+    }
+
+    val pendingIntent = PendingIntent.getActivity(
+        context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val notification = NotificationCompat.Builder(context, "channel_id")
+        .setSmallIcon(R.drawable.notification_image)
+        .setContentTitle("Notifications Enabled")
+        .setContentText("If lighting is high, colors change!")
+        .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setContentIntent(pendingIntent)
+        .setAutoCancel(true)
+        .build()
+
+    notificationManager.notify(1, notification)
+}
+
 
 //Save new information
 fun saveAuthorData(context: Context, newAuthor: String, newImageUri: String) {
@@ -370,19 +552,34 @@ fun Conversation(messages: List<Message>) {
 @Preview
 @Composable
 fun PreviewApp() {
-    ComposeTutorialTheme {
+    val isDarkTheme = remember { mutableStateOf(false) } // Default to light theme for preview
+
+    ComposeTutorialTheme(isDarkTheme.value) {
         val sampleMessages = remember { mutableStateOf(SampleData.conversationSample) }
         AppNavigation(messages = sampleMessages)
     }
 }
 
 @Composable
-fun ComposeTutorialTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = MaterialTheme.colorScheme.copy(
+fun ComposeTutorialTheme(isDarkTheme: Boolean, content: @Composable () -> Unit) {
+    val colors = if (isDarkTheme) {
+        darkColorScheme(
+            primary = Color(0xFF006400),
+            surface = Color(0xFF00FF00),
+            onPrimary = Color.Black,
+            onSurface = Color.Black,
+        )
+    } else {
+        lightColorScheme(
             primary = Color(0xFF6200EE),
-            surface = Color(0xFFBB86FC)
-        ),
+            surface = Color(0xFFBB86FC),
+            onPrimary = Color.Black,
+            onSurface = Color.Black,
+        )
+    }
+
+    MaterialTheme(
+        colorScheme = colors,
         typography = MaterialTheme.typography,
         content = content
     )
