@@ -45,34 +45,6 @@ object SampleData {
             |4. Enhanced UI toolkit""".trim(),
             imageUrl = getDrawableUri("john_smith2")
         ),
-        Message(
-            author = "John Smith",
-            body = """I was reading about Android 13 today. It's bringing new updates like:
-            |- Privacy changes
-            |- Performance improvements
-            |- New UI features""".trim(),
-            imageUrl = getDrawableUri("john_smith2")
-        ),
-        Message(
-            author = "John Smith",
-            body = """Working on the new mobile app project, it's coming along really well!""",
-            imageUrl = getDrawableUri("john_smith2")
-        ),
-        Message(
-            author = "John Smith",
-            body = """Excited for the new Kotlin release, with improvements in performance and language features.""",
-            imageUrl = getDrawableUri("john_smith2")
-        ),
-        Message(
-            author = "John Smith",
-            body = """Android development is evolving so fast, it's amazing how much has changed over the years.""",
-            imageUrl = getDrawableUri("john_smith2")
-        ),
-        Message(
-            author = "John Smith",
-            body = """Happy to be learning more about Jetpack Compose for UI design. It's so powerful!""",
-            imageUrl = getDrawableUri("john_smith2")
-        ),
 
     )
 

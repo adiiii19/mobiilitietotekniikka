@@ -1,6 +1,7 @@
 package com.example.mobiili
 
 import android.Manifest
+import androidx.compose.ui.platform.LocalContext
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -14,10 +15,12 @@ import android.hardware.SensorManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
@@ -47,9 +50,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TextField
@@ -89,8 +94,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
     private var currentLux: Float = 0f
     private var isDarkTheme = mutableStateOf(false)
 
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         // Initialize sensor manager
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         lightSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_LIGHT)
@@ -99,6 +106,10 @@ class MainActivity : ComponentActivity(), SensorEventListener {
         sensorManager?.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL)
 
         setContent {
+            fun startMapActivity(context: Context) {
+                val intent = Intent(context, MapActivity::class.java)
+                context.startActivity(intent)
+            }
             ComposeTutorialTheme(isDarkTheme.value) {
                 val messages = remember { mutableStateOf(listOf<Message>()) }
                 val context = LocalContext.current
@@ -111,9 +122,11 @@ class MainActivity : ComponentActivity(), SensorEventListener {
                     }
                 }
 
-                AppNavigation(messages)
+                AppNavigation(messages, { startMapActivity(context) })
             }
         }
+
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 "channel_id",
@@ -231,32 +244,125 @@ suspend fun initializeSampleData(context: Context) {
         println("Database already contains data")
     }
 }
-
-// Main View
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainView(navController: NavController, messages: List<Message>) {
-    Column(
+fun MainView(navController: NavController, messages: MutableState<List<Message>>, startMapActivity: () -> Unit) {
+    val context = LocalContext.current
+    var newMessageText by remember { mutableStateOf("") }
+    var isSendingMessage by remember { mutableStateOf(false) }
+
+    Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        TopAppBar(
-            title = { Text(text = "Conversations", style = MaterialTheme.typography.bodyLarge) },
-            actions = {
-                IconButton(onClick = { navController.navigate("userProfileView") }) {
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            TopAppBar(
+                title = { Text(text = "Conversations", style = MaterialTheme.typography.bodyLarge) },
+                actions = {
+                    IconButton(onClick = { navController.navigate("userProfileView") }) {
+                        Image(
+                            painter = painterResource(id = R.drawable.settings_icon),
+                            contentDescription = "Settings",
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+            )
+
+            // Show conversations
+            Conversation(messages = messages.value)
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextField(
+                    value = newMessageText,
+                    onValueChange = { newMessageText = it },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 8.dp),
+                    placeholder = { Text("Type a message...") }
+                )
+
+                Button(
+                    onClick = {
+                        if (newMessageText.isNotBlank()) {
+                            isSendingMessage = true
+                        }
+                    }
+                ) {
+                    Text("Send")
+                }
+            }
+
+            Box(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Button(
+                    onClick = {
+                        startMapActivity()
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp)
+                        .size(56.dp),
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(0.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.background)
+                ) {
                     Image(
-                        painter = painterResource(id = R.drawable.settings_icon),
-                        contentDescription = "Settings",
-                        modifier = Modifier.size(32.dp)
+                        painter = painterResource(id = R.drawable.placeholder),
+                        contentDescription = "Placeholder",
+                        modifier = Modifier.size(56.dp)
                     )
                 }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-        )
+            }
+        }
+    }
 
-        // Show conversations
-        Conversation(messages = messages)
+    LaunchedEffect(isSendingMessage) {
+        if (isSendingMessage) {
+            val firstMessage = messages.value.firstOrNull()
+            val author = firstMessage?.author ?: "User"
+            val imageUri = firstMessage?.imageUrl ?: "defaultImageUri"
+
+            val newMessage = Message(author = author, body = newMessageText, imageUrl = imageUri)
+            Log.d("MainView", "New message: $newMessage")
+            saveMessageToDatabase(context, newMessage)
+
+            // Update the UI
+            messages.value = messages.value + newMessage
+            Log.d("MainView", "Updated messages: ${messages.value}")
+
+            newMessageText = "" // Clear the text field
+            isSendingMessage = false
+        }
     }
 }
+
+suspend fun saveMessageToDatabase(context: Context, message: Message) {
+    val database = Room.databaseBuilder(
+        context,
+        AppDatabase::class.java,
+        "app_database"
+    ).build()
+
+    val messageDataDao = database.messageDataDao()
+    val messageData = MessageData(
+        author = message.author,
+        body = message.body,
+        imageUrl = message.imageUrl
+    )
+    messageDataDao.insertMessageData(messageData)
+}
+
 
 //Second view
 @OptIn(ExperimentalMaterial3Api::class)
@@ -473,21 +579,19 @@ fun ImagePicker(currentImageUri: Uri?, onImagePicked: (Uri) -> Unit) {
     }
 }
 
-//Navigation for app
 @Composable
-fun AppNavigation(messages: MutableState<List<Message>>) {
+fun AppNavigation(messages: MutableState<List<Message>>, startMapActivity: () -> Unit) {
     val navController = rememberNavController()
 
     NavHost(navController = navController, startDestination = "mainView") {
         composable("mainView") {
-            MainView(navController = navController, messages = messages.value)
+            MainView(navController = navController, messages = messages, startMapActivity = startMapActivity)
         }
         composable("userProfileView") {
             SecondView(navController = navController, messages = messages)
         }
     }
 }
-
 //Message structure
 data class Message(val author: String, val body: String, val imageUrl: String)
 
@@ -557,7 +661,7 @@ fun PreviewApp() {
 
     ComposeTutorialTheme(isDarkTheme.value) {
         val sampleMessages = remember { mutableStateOf(SampleData.conversationSample) }
-        AppNavigation(messages = sampleMessages)
+        AppNavigation(sampleMessages) { }
     }
 }
 
@@ -576,6 +680,7 @@ fun ComposeTutorialTheme(isDarkTheme: Boolean, content: @Composable () -> Unit) 
             surface = Color(0xFFBB86FC),
             onPrimary = Color.Black,
             onSurface = Color.Black,
+            background = Color.White
         )
     }
 
